@@ -7,10 +7,9 @@ from dash import dcc
 from dash.dependencies import Input, Output
 import plotly.express as px
 import pickle
-
+from sklearn.preprocessing import OneHotEncoder
 # Read data
 df=pd.read_csv("Data/healthcare-dataset-stroke-data.csv")
-
 
 # Create a dash application
 app = dash.Dash(__name__)
@@ -168,6 +167,28 @@ def preprocess_2(df):
     df_temp.reset_index(inplace=True)
     return df_temp
 
+def preprocess_for_model(df):
+    df_model=df[df['gender']!='Other']
+    df_model=df_model[df_model['bmi'].notnull()]
+    bmi_bins=[0,18.5,25,30,35,40,100]
+    labels=[1,2,3,4,5,6]
+    df_model['bmi_bin']=pd.cut(df_model['bmi'],right=False,bins=bmi_bins,labels=labels)
+    df_model=df_model[df_model['age'] > 11]
+    age_bins=[12,20,25,60,85] #tuổi lớn nhất của dataframe này <85
+    age_labels=['12-20','20-25','25-60','> 60']
+    df_model['age_bin'] = pd.cut(df_model['age'],right=False,bins=age_bins,labels=age_labels)
+    glu_bins=[0,140,200,500]
+    glu_labels=['0-139','140-199','> 200']
+    df_model['glu_bin'] = pd.cut(df_model['avg_glucose_level'], right=False, bins=glu_bins, labels=glu_labels)
+    df_model=df_model.drop(columns=['id','age','avg_glucose_level','bmi'])
+    df_model=df_model.loc[:, df_model.columns != 'stroke']
+    return df_model
+
+
+enc = OneHotEncoder(handle_unknown='ignore')
+df_model=preprocess_for_model(df)
+enc.fit(df_model)
+
 # Callback decorator
 @app.callback([
                 Output(component_id='display_predict', component_property='children'),
@@ -189,7 +210,8 @@ def preprocess_2(df):
 # Computation to callback function and return graph
 def get_graph(gender,age,hyper,heart,married,work,residence,smoke,glu,bmi):
     data_list=[[gender,hyper,heart,married,work,residence,smoke,bmi,age,glu]]
-    df_predict=pd.DataFrame(data_list,columns=['gender','hypertension','heart_disease','ever_married','work_type','Residence_type','smoking_status','bmi_bin','age_bin','glu_bin'])
+    df_predict=pd.DataFrame(data_list,columns=['gender','hypertension','heart_disease','ever_married','work_type','Residence_type','smoking_status','bmi_bin','age_bin','glu_bin'])  
+    df_predict=enc.transform(df_predict)
     with open('Data/mlp.pkl','rb') as f:
         loaded_model = pickle.load(f)
         result = loaded_model.predict_proba(df_predict)*100
